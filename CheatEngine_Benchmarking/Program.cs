@@ -1,79 +1,82 @@
 ﻿using System;
 using System.Runtime.InteropServices;
 using System.Diagnostics;
+using System.Runtime.Serialization.Formatters.Binary;
+using System.IO;
+using System.Text;
 
 namespace CheatEngine_Benchmarking
 {
-
     class Program
     {
-        [DllImport("kernel32", CharSet = CharSet.Auto)]
-        public static extern IntPtr OpenProcess(Int32 Access, Boolean InheritHandle, Int32 ProcessId);
-
-        [DllImport("kernel32")]
-        public static extern void CloseHandle(IntPtr hProcess);
-
-        public const Int32 PROCESS_VM_READ = 0x10;
-        public const Int32 PROCESS_VM_WRITE = 0x20;
-
-
-        void BindToRunningProcesses()
-        {
-            // 현재 실행중인 프로세스를 가져옴
-            Process currentProcess = Process.GetCurrentProcess();
-
-            // 로컬 상에서 실행중인 모든 프로세스를 가져옴
-            Process[] localAll = Process.GetProcesses();
-            
-            // 특정 이름으로 프로세스를 찾음
-            Process[] localByName = Process.GetProcessesByName("notepad");
-
-            Console.WriteLine("notepad process : {0}", localByName);
-
-            // 특정 PID로 프로세스를 찾음
-            Process localById = Process.GetProcessById(9600);
-
-        }
-
         static void Main(string[] args)
         {
-            //Program pro = new Program();
-            //pro.BindToRunningProcesses();
+            Console.Write("Edit Process Name : ");
+            string procName = Console.ReadLine();
 
-        EnterPID:
-            Int32 ProcessId;
-            int procID = Process.GetProcessesByName("notepad")[0].Id;
-            Console.Write("종료할 프로세스의 식별자(PID)를 입력하세요: ");
-            try
-            {
-                ProcessId = Int32.Parse(Console.ReadLine());
-            }
-            catch (Exception)
-            {
-                Console.WriteLine("다시 입력하세요");
-                goto EnterPID;
-            }
+            Process[] p = Process.GetProcessesByName(procName);
 
-            IntPtr hProcess = OpenProcess(PROCESS_VM_READ | PROCESS_VM_WRITE, false, ProcessId);
+            uint DELETE = 0x00010000;
+            uint READ_CONTROL = 0x00020000;
+            uint WRITE_DAC = 0x00040000;
+            uint WRITE_OWNER = 0x00080000;
+            uint SYNCHRONIZE = 0x00100000;
+            uint END = 0xFFF; //if you have WinXP or Windows Server 2003 you must change this to 0xFFFF
+            uint PROCESS_ALL_ACCESS = (DELETE |
+                       READ_CONTROL |
+                       WRITE_DAC |
+                       WRITE_OWNER |
+                       SYNCHRONIZE |
+                       END
+                     );
 
-            if (hProcess == IntPtr.Zero)
-            {
-                Console.WriteLine("프로세스 핸들 열기 실패!");
-                return;
-            }
-            /*
-            if (TerminateProcess(hProcess, 0) != 0)
-            {
-                Console.WriteLine("프로세스 종료 성공!");
-                result = true;
-            }
-            else
-            {
-                Console.WriteLine("프로세스 종료 실패!");
-            }
-            */
-            CloseHandle(hProcess);
-            Console.ReadKey(true);
+            int processHandle = OpenProcess(PROCESS_ALL_ACCESS, false, p[0].Id);
+
+            Console.Write("Changing Value : ");
+            string procSize = Console.ReadLine();
+            int processSize = GetObjectSize(procSize);
+
+            // Here.. 
+            int OFFSET = 0x001CAB38;
+
+            Console.WriteLine((Encoding.Unicode.GetString(ReadMemory(OFFSET, processSize, processHandle))));
+
+            Console.Write("Changed Value : ");
+            string text = Console.ReadLine();
+            // 문자열 잘림 현상
+            WriteMemory(OFFSET, Encoding.Unicode.GetBytes(text), processHandle);
+        }
+
+        [DllImport("kernel32.dll")]
+        public static extern int OpenProcess(uint dwDesiredAccess, bool bInheritHandle, int dwProcessId);
+
+        [DllImport("kernel32.dll")]
+        public static extern bool ReadProcessMemory(int hProcess, int lpBaseAddress, byte[] buffer, int size, int lpNumberOfBytesRead);
+
+        [DllImport("kernel32.dll")]
+        public static extern bool WriteProcessMemory(int hProcess, int lpBaseAddress, byte[] buffer, int size, int lpNumberOfBytesWritten);
+
+        public static byte[] ReadMemory(int adress, int processSize, int processHandle)
+        {
+            byte[] buffer = new byte[processSize];
+            ReadProcessMemory(processHandle, adress, buffer, processSize, 0);
+            return buffer;
+        }
+
+        public static void WriteMemory(int adress, byte[] processBytes, int processHandle)
+        {
+            WriteProcessMemory(processHandle, adress, processBytes, processBytes.Length, 0);
+        }
+
+
+        public static int GetObjectSize(object TestObject)
+        {
+            BinaryFormatter bf = new BinaryFormatter();
+            MemoryStream ms = new MemoryStream();
+            byte[] Array;
+            bf.Serialize(ms, TestObject);
+            Array = ms.ToArray();
+            return Array.Length;
         }
     }
 }
